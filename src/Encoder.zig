@@ -1,5 +1,7 @@
 const Encoder = @This();
 
+const simd = @import("simd.zig");
+
 const Allocator = @import("std").mem.Allocator;
 
 alphabet: [32]u8,
@@ -65,9 +67,9 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
         const lo_r_shift = @Vector(16, u8){ 0, 6, 0, 4, 7, 0, 5, 0, 0, 6, 0, 4, 7, 0, 5, 0 };
         const mask: @Vector(16, u8) = @splat(0x1F);
 
-        const bytes: [16]u8 = (hi_chunk >> hi_r_shift << hi_l_shift) | (lo_chunk >> lo_r_shift) & mask;
+        const bytes = (hi_chunk >> hi_r_shift << hi_l_shift) | (lo_chunk >> lo_r_shift) & mask;
 
-        inline for (bytes, 0..) |char, index| dest_slice[index] = self.alphabet[char];
+        dest_slice[0..16].* = simd.shuffle(16, self.alphabet[0..32].*, bytes);
     }
 
     if (source_slice.len >= 5) {
@@ -80,7 +82,7 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
 
         const bytes: [8]u8 = (hi_chunk >> hi_r_shift << hi_l_shift) | (lo_chunk >> lo_r_shift) & mask;
 
-        inline for (bytes, 0..) |char, index| dest_slice[index] = self.alphabet[char];
+        dest_slice[0..8].* = simd.shuffle(8, self.alphabet[0..32].*, bytes);
 
         source_slice = source_slice[5..];
         dest_slice = dest_slice[8..];
@@ -97,7 +99,7 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
 
             const bytes: [7]u8 = hi_chunk >> hi_r_shift << hi_l_shift | lo_chunk >> lo_r_shift & mask;
 
-            inline for (bytes, 0..) |char, index| dest_slice[index] = self.alphabet[char];
+            dest_slice[0..7].* = simd.shuffle(7, self.alphabet[0..32].*, bytes);
 
             if (with_padding) dest_slice[7] = self.padding[0];
         },
