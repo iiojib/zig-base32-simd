@@ -1,6 +1,8 @@
 const Decoder = @This();
 
-const Allocator = @import("std").mem.Allocator;
+const std = @import("std");
+
+const Allocator = std.mem.Allocator;
 
 decode_table: [256]u8,
 padding: u8,
@@ -215,4 +217,150 @@ pub fn allocDecode(self: *const Decoder, allocator: *Allocator, source: []const 
     errdefer allocator.free(dest);
 
     return self.decode(dest, source);
+}
+
+test "calc size" {
+    const decoder = try Decoder.init(.{ .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".* });
+
+    const source = "pb1sa5dxrb5s6hucco";
+    const source_with_padding = source ++ "======";
+
+    const size = decoder.calcSize(source);
+    const size_with_padding = decoder.calcSize(source_with_padding);
+
+    try std.testing.expect(size == 11);
+    try std.testing.expect(size_with_padding == 11);
+}
+
+test "decode" {
+    const decoder = try Decoder.init(.{ .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".* });
+
+    var allocator = std.testing.allocator;
+
+    const source = "pb1sa5dxrb5s6hucco";
+    const source_with_padding = source ++ "======";
+    const expected = "hello world";
+
+    const decoded = try decoder.allocDecode(&allocator, source);
+    defer allocator.free(decoded);
+
+    const decoded_with_padding = try decoder.allocDecode(&allocator, source_with_padding);
+    defer allocator.free(decoded_with_padding);
+
+    try std.testing.expectEqualStrings(expected, decoded);
+    try std.testing.expectEqualStrings(expected, decoded_with_padding);
+}
+
+test "decode case insensitive" {
+    const decoder = try Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .case_sensitive = false,
+    });
+
+    var allocator = std.testing.allocator;
+
+    const source = "pB1Sa5dXrB5S6HUCco";
+    const source_with_padding = source ++ "======";
+    const expected = "hello world";
+
+    const decoded = try decoder.allocDecode(&allocator, source);
+    defer allocator.free(decoded);
+
+    const decoded_with_padding = try decoder.allocDecode(&allocator, source_with_padding);
+    defer allocator.free(decoded_with_padding);
+
+    try std.testing.expectEqualStrings(expected, decoded);
+    try std.testing.expectEqualStrings(expected, decoded_with_padding);
+}
+
+test "decode with alias" {
+    const decoder = try Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .alias_table = &[_]Alias{
+            .{ 'l', '1' },
+            .{ '0', 'o' },
+        },
+    });
+
+    var allocator = std.testing.allocator;
+
+    const source = "pblsa5dxrb5s6hucc0";
+    const source_with_padding = source ++ "======";
+    const expected = "hello world";
+
+    const decoded = try decoder.allocDecode(&allocator, source);
+    defer allocator.free(decoded);
+
+    const decoded_with_padding = try decoder.allocDecode(&allocator, source_with_padding);
+    defer allocator.free(decoded_with_padding);
+
+    try std.testing.expectEqualStrings(expected, decoded);
+    try std.testing.expectEqualStrings(expected, decoded_with_padding);
+}
+
+test "decode errors" {
+    const decoder = try Decoder.init(.{ .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".* });
+
+    var allocator = std.testing.allocator;
+
+    const buf = [_]u8{};
+    const buffer_too_small = decoder.decode(&buf, "pb1sa5dxrb5s6hucco");
+    const invalid_character = decoder.allocDecode(&allocator, "pb1sa5dxrb5s6hucc0");
+    const malformed_input = decoder.allocDecode(&allocator, "pb1sa5dxrb5s6hucc");
+
+    try std.testing.expect(buffer_too_small == error.OutBufferTooSmall);
+    try std.testing.expect(invalid_character == error.InvalidCharacter);
+    try std.testing.expect(malformed_input == error.MalformedInput);
+}
+
+test "init errors" {
+    const invalid_padding = Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .padding = 'y',
+    });
+
+    try std.testing.expect(invalid_padding == error.InvalidPadding);
+
+    const invalid_alphabet = Decoder.init(.{
+        .alphabet = "yyndrfg8ejkmcpqxot1uwisza345h769".*,
+    });
+
+    try std.testing.expect(invalid_alphabet == error.InvalidAlphabet);
+
+    const case_conflict = Decoder.init(.{
+        .alphabet = "yYndrfg8ejkmcpqxot1uwisza345h769".*,
+        .case_sensitive = false,
+    });
+
+    try std.testing.expect(case_conflict == error.InvalidAlphabet);
+
+    const invalid_alias = Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .alias_table = &[_]Alias{.{ '0', 'O' }},
+    });
+
+    try std.testing.expect(invalid_alias == error.InvalidAliasTable);
+
+    const alias_conflict = Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .alias_table = &[_]Alias{.{ 'i', '1' }},
+    });
+
+    try std.testing.expect(alias_conflict == error.InvalidAliasTable);
+
+    const alias_case_conflict = Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .alias_table = &[_]Alias{.{ 'I', '1' }},
+        .case_sensitive = false,
+    });
+
+    try std.testing.expect(alias_case_conflict == error.InvalidAliasTable);
+
+    const alias_padding_conflict = Decoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .alias_table = &[_]Alias{.{ '!', '1' }},
+        .padding = '!',
+    });
+
+    try std.testing.expect(alias_padding_conflict == error.InvalidPadding);
 }

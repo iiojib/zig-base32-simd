@@ -1,8 +1,10 @@
 const Encoder = @This();
 
+const std = @import("std");
+
 const simd = @import("simd.zig");
 
-const Allocator = @import("std").mem.Allocator;
+const Allocator = std.mem.Allocator;
 
 alphabet: [32]u8,
 padding: [6]u8,
@@ -141,4 +143,83 @@ pub fn allocEncode(self: *const Encoder, allocator: *Allocator, source: []const 
     const dest = try allocator.alloc(u8, output_size);
 
     return self.encode(dest, source, with_padding);
+}
+
+test "calc size" {
+    const encoder = try Encoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+    });
+
+    const source = "hello world";
+
+    const size = encoder.calcSize(source.len, false);
+    const size_with_padding = encoder.calcSize(source.len, true);
+
+    try std.testing.expect(size == 18);
+    try std.testing.expect(size_with_padding == 24);
+}
+
+test "encode" {
+    const encoder = try Encoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+    });
+
+    var allocator = std.testing.allocator;
+
+    const source = "hello world";
+    const expected = "pb1sa5dxrb5s6hucco";
+    const expected_with_padding = expected ++ "======";
+
+    const encoded = try encoder.allocEncode(&allocator, source, false);
+    defer allocator.free(encoded);
+
+    const encoded_with_padding = try encoder.allocEncode(&allocator, source, true);
+    defer allocator.free(encoded_with_padding);
+
+    try std.testing.expectEqualStrings(expected, encoded);
+    try std.testing.expectEqualStrings(expected_with_padding, encoded_with_padding);
+}
+
+test "encode with custom padding" {
+    const encoder = try Encoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .padding = '!',
+    });
+
+    var allocator = std.testing.allocator;
+
+    const source = "hello world";
+    const expected = "pb1sa5dxrb5s6hucco!!!!!!";
+
+    const encoded = try encoder.allocEncode(&allocator, source, true);
+    defer allocator.free(encoded);
+
+    try std.testing.expectEqualStrings(expected, encoded);
+}
+
+test "encode errors" {
+    const encoder = try Encoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+    });
+
+    var buf = [_]u8{};
+    const source = "hello world";
+    const err = encoder.encode(&buf, source, true);
+
+    try std.testing.expect(err == error.OutBufferTooSmall);
+}
+
+test "init errors" {
+    const invalid_padding = Encoder.init(.{
+        .alphabet = "ybndrfg8ejkmcpqxot1uwisza345h769".*,
+        .padding = 'y',
+    });
+
+    try std.testing.expect(invalid_padding == error.InvalidPadding);
+
+    const invalid_alphabet = Encoder.init(.{
+        .alphabet = "yyndrfg8ejkmcpqxot1uwisza345h769".*,
+    });
+
+    try std.testing.expect(invalid_alphabet == error.InvalidAplhabet);
 }

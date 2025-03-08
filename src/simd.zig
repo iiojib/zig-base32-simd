@@ -94,3 +94,25 @@ pub const shuffle = switch (simd_type) {
     .avx, .neon, .wasm => shuffle32,
     .no_simd => fallback,
 };
+
+test "simd" {
+    if (simd_type == .no_simd) return error.SkipZigTest;
+
+    const input = "0123456789ABCDEF".*;
+    const mask = [_]u8{ 6, 5, 6, 14, 6, 3, 6, 15, 6, 4, 6, 9, 6, 14, 6, 7 };
+    const expected = "656E636F64696E67";
+
+    const result: [16]u8 = shuffle16(input, mask);
+
+    try std.testing.expectEqualStrings(expected, &result);
+}
+
+test "shuffle" {
+    const input = "ybndrfg8ejkmcpqxot1uwisza345h769".*;
+    const mask = [_]u8{ 15, 9, 20, 22, 14, 8, 3, 2, 12, 5, 25, 22, 10, 12, 25, 18 };
+    const expected = "xjwsqedncf3skc31";
+
+    const result = shuffle(16, input, mask);
+
+    try std.testing.expectEqualStrings(expected, &result);
+}
