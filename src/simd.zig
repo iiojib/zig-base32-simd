@@ -53,7 +53,10 @@ const simd_type: SimdType = blk: {
         break :blk .neon;
     }
 
-    if (cpu.arch.isWasm() and Target.wasm.featureSetHas(cpu.features, .simd128)) {
+    const supported_wasm_version = SemanticVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const is_supported_wasm_version = SemanticVersion.order(zig_version, supported_wasm_version) != .gt;
+
+    if (cpu.arch.isWasm() and Target.wasm.featureSetHas(cpu.features, .simd128) and is_supported_wasm_version) {
         break :blk .wasm;
     }
 
