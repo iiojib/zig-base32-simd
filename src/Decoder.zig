@@ -7,6 +7,8 @@ const Allocator = std.mem.Allocator;
 decode_table: [256]u8,
 padding: u8,
 
+// Safe inverse case table for single-byte UTF-8 characters for fast case conversion.
+// Characters with multi-byte uppercase representations (e.g., ß or μ) are kept as is without conversion.
 const unicode_inverse_case_table: [256]u8 = blk: {
     var table: [256]u8 = undefined;
 
@@ -21,20 +23,29 @@ const unicode_inverse_case_table: [256]u8 = blk: {
     break :blk table;
 };
 
+/// Initialization errors.
 pub const InitError = error{
     InvalidAlphabet,
     InvalidAliasTable,
     InvalidPadding,
 };
 
+/// Decoding errors.
 pub const DecodeError = error{
     OutBufferTooSmall,
     InvalidCharacter,
     MalformedInput,
 };
 
-pub const Alias = struct { u8, u8 };
+/// Alias tuple.
+pub const Alias = struct {
+    /// Alias char
+    u8,
+    /// Alphabet char
+    u8,
+};
 
+/// Decoder options.
 pub const Options = struct {
     alphabet: [32]u8,
     alias_table: ?[]const Alias = null,
@@ -44,11 +55,13 @@ pub const Options = struct {
 
 const invlid_char = 0xFF;
 
+/// Initializes a new decoder instance.
 pub fn init(options: Options) InitError!Decoder {
     var decode_table = [_]u8{invlid_char} ** 256;
 
     if (options.case_sensitive) {
         for (options.alphabet, 0..) |char, index| {
+            // Check for duplicate characters.
             if (decode_table[char] != invlid_char) return error.InvalidAlphabet;
 
             decode_table[char] = @truncate(index);
@@ -58,6 +71,7 @@ pub fn init(options: Options) InitError!Decoder {
             const has_char = decode_table[char] != invlid_char;
             const has_inverse_char = decode_table[unicode_inverse_case_table[char]] != invlid_char;
 
+            // Check for duplicate characters in case-insensitive mode.
             if (has_char or has_inverse_char) return error.InvalidAlphabet;
 
             decode_table[char] = @truncate(index);
@@ -72,6 +86,7 @@ pub fn init(options: Options) InitError!Decoder {
                 const has_alias_char = decode_table[alias_char] != invlid_char;
                 const has_alphabet_char = decode_table[alphabet_char] != invlid_char;
 
+                // Check for conflicts with alias character and presence of aliased character.
                 if (has_alias_char or !has_alphabet_char) return error.InvalidAliasTable;
 
                 decode_table[alias_char] = decode_table[alphabet_char];
@@ -83,6 +98,7 @@ pub fn init(options: Options) InitError!Decoder {
                 const has_inverse_alias_char = decode_table[unicode_inverse_case_table[alias_char]] != invlid_char;
                 const has_alphabet_char = decode_table[alphabet_char] != invlid_char;
 
+                // Check for conflicts with alias character and presence of aliased character in case-insensitive mode.
                 if (has_alias_char or has_inverse_alias_char or !has_alphabet_char) return error.InvalidAliasTable;
 
                 decode_table[alias_char] = decode_table[alphabet_char];
@@ -91,6 +107,7 @@ pub fn init(options: Options) InitError!Decoder {
         }
     }
 
+    // Check that padding character is not in the alphabet.
     if (decode_table[options.padding] != invlid_char) return error.InvalidPadding;
 
     return Decoder{
@@ -111,6 +128,7 @@ inline fn calcOutputSize(size_without_padding: usize) usize {
     return size_without_padding * 5 / 8;
 }
 
+/// Calculates the size required to decode the source data.
 pub fn calcSize(self: *const Decoder, source: []const u8) usize {
     const size = self.calcSourceSizeWithoutPadding(source);
 
@@ -123,11 +141,13 @@ inline fn getChunk(self: *const Decoder, source: []const u8, comptime size: usiz
 
     inline for (source[0..size], 0..) |char, index| chunk[index] = self.decode_table[char];
 
+    // Check the chunk for invalid characters.
     if (@reduce(.Or, chunk == invalid)) return error.InvalidCharacter;
 
     return chunk;
 }
 
+/// Decodes the source data into the destination buffer.
 pub fn decode(self: *const Decoder, dest: []u8, source: []const u8) DecodeError![]u8 {
     if (source.len == 0) return dest[0..0];
 
@@ -139,6 +159,7 @@ pub fn decode(self: *const Decoder, dest: []u8, source: []const u8) DecodeError!
     var source_slice = source[0..source_size];
     var dest_slice = dest[0..output_size];
 
+    // Decode each 16 bytes to 10 bytes at a time using SIMD.
     while (source_slice.len >= 16) : ({
         source_slice = source_slice[16..];
         dest_slice = dest_slice[10..];
@@ -155,6 +176,7 @@ pub fn decode(self: *const Decoder, dest: []u8, source: []const u8) DecodeError!
         dest_slice[0..10].* = (hi_chunk << hi_l_shift) | (mid_chunk >> mid_r_shift << mid_l_shift) | (lo_chunk >> lo_r_shift);
     }
 
+    // Decode 8 bytes to 5 bytes at a time using SIMD.
     if (source_slice.len >= 8) {
         const chunk = try self.getChunk(source_slice, 8);
         const hi_chunk = @shuffle(u8, chunk, undefined, @Vector(5, u8){ 0, 1, 3, 4, 6 });
@@ -171,6 +193,7 @@ pub fn decode(self: *const Decoder, dest: []u8, source: []const u8) DecodeError!
         dest_slice = dest_slice[5..];
     }
 
+    // Decode the remaining bytes.
     switch (source_slice.len) {
         7 => {
             const chunk = try self.getChunk(source_slice, 7);
@@ -210,6 +233,8 @@ pub fn decode(self: *const Decoder, dest: []u8, source: []const u8) DecodeError!
     return dest[0..output_size];
 }
 
+/// Allocates a buffer and decodes the source data into it.
+/// The caller is responsible for freeing the returned buffer.
 pub fn allocDecode(self: *const Decoder, allocator: *Allocator, source: []const u8) ![]u8 {
     const output_size = self.calcSize(source);
     const dest = try allocator.alloc(u8, output_size);

@@ -10,6 +10,7 @@ const Decoder = @import("Decoder.zig");
 encoder: Encoder,
 decoder: Decoder,
 
+/// Encoding options.
 pub const Options = struct {
     alphabet: [32]u8,
     alias_table: ?[]const Decoder.Alias = null,
@@ -17,6 +18,7 @@ pub const Options = struct {
     case_sensitive: bool = true,
 };
 
+/// Initialize a new encoding instance.
 pub fn init(options: Options) !Encoding {
     return Encoding{
         .encoder = try Encoder.init(.{
@@ -33,26 +35,32 @@ pub fn init(options: Options) !Encoding {
     };
 }
 
+/// Alias for `Encoder.calcSize`.
 pub inline fn calcEncodeSize(self: *const Encoding, source_size: usize, with_padding: bool) usize {
     return self.encoder.calcSize(source_size, with_padding);
 }
 
+/// Alias for `Encoder.encode`.
 pub inline fn encode(self: *const Encoding, dest: []u8, source: []const u8, with_padding: bool) ![]u8 {
     return self.encoder.encode(dest, source, with_padding);
 }
 
+/// Alias for `Encoder.allocEncode`.
 pub inline fn allocEncode(self: *const Encoding, allocator: *Allocator, source: []const u8, with_padding: bool) ![]u8 {
     return self.encoder.allocEncode(allocator, source, with_padding);
 }
 
+/// Alias for `Decoder.calcSize`.
 pub inline fn calcDecodeSize(self: *const Encoding, source_size: usize) usize {
     return self.decoder.calcSize(source_size);
 }
 
+/// Alias for `Decoder.decode`.
 pub inline fn decode(self: *const Encoding, dest: []u8, source: []const u8) ![]u8 {
     return self.decoder.decode(dest, source);
 }
 
+/// Alias for `Decoder.allocDecode`.
 pub inline fn allocDecode(self: *const Encoding, allocator: *Allocator, source: []const u8) ![]u8 {
     return self.decoder.allocDecode(allocator, source);
 }

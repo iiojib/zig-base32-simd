@@ -13,10 +13,13 @@ pub const crockford_alias_table = [_]Decoder.Alias{
     .{ 'L', '1' },
 };
 
+/// RFC 4648 base32 encoding.
 pub const rfc_4648 = Encoding.init(.{ .alphabet = standard_alphabet }) catch unreachable;
 
+/// RFC 4648 base32hex encoding.
 pub const rfc_4648_hex = Encoding.init(.{ .alphabet = standard_hex_alphabet }) catch unreachable;
 
+/// Crockford's base32 encoding.
 pub const crockford = Encoding.init(.{
     .alphabet = crockford_alphabet,
     .alias_table = &crockford_alias_table,

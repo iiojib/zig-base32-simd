@@ -9,37 +9,45 @@ const Allocator = std.mem.Allocator;
 alphabet: [32]u8,
 padding: [6]u8,
 
+/// Intialization errors.
 pub const InitError = error{
     InvalidAplhabet,
     InvalidPadding,
 };
 
+/// Encoding errors.
 pub const EncodeError = error{
     OutBufferTooSmall,
 };
 
+/// Encoder options.
 pub const Options = struct {
     alphabet: [32]u8,
     padding: u8 = '=',
 };
 
+/// Initializes a new encoder instance.
 pub fn init(options: Options) InitError!Encoder {
     var char_in_alphabet = [_]bool{false} ** 256;
 
     for (options.alphabet) |char| {
+        // Check for duplicate characters.
         if (char_in_alphabet[char]) return error.InvalidAplhabet;
 
         char_in_alphabet[char] = true;
     }
 
+    // Check that padding character is not in the alphabet.
     if (char_in_alphabet[options.padding]) return error.InvalidPadding;
 
     return Encoder{
         .alphabet = options.alphabet,
+        // Populate padding array with the padding character.
         .padding = .{options.padding} ** 6,
     };
 }
 
+/// Calculates the size required to encode the source data.
 pub fn calcSize(_: *const Encoder, source_size: usize, with_padding: bool) usize {
     if (with_padding) {
         return (source_size + 4) / 5 * 8;
@@ -48,6 +56,7 @@ pub fn calcSize(_: *const Encoder, source_size: usize, with_padding: bool) usize
     return (source_size * 8 + 4) / 5;
 }
 
+/// Encodes the source data into the destination buffer.
 pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding: bool) EncodeError![]u8 {
     if (source.len == 0) return dest[0..0];
 
@@ -58,6 +67,7 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
     var source_slice = source;
     var dest_slice = dest[0..output_size];
 
+    // Encode each 10 bytes to 16 bytes at a time using SIMD.
     while (source_slice.len >= 10) : ({
         source_slice = source_slice[10..];
         dest_slice = dest_slice[16..];
@@ -74,6 +84,7 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
         dest_slice[0..16].* = simd.shuffle(16, self.alphabet[0..32].*, bytes);
     }
 
+    // Encode 5 bytes to 8 bytes at a time using SIMD.
     if (source_slice.len >= 5) {
         const hi_chunk = @shuffle(u8, source_slice[0..5].*, undefined, @Vector(8, i32){ 0, 0, 1, 1, 2, 3, 3, 4 });
         const lo_chunk = @shuffle(u8, source_slice[0..5].*, [_]u8{0}, @Vector(8, i32){ -1, 1, -1, 2, 3, -1, 4, -1 });
@@ -90,7 +101,9 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
         dest_slice = dest_slice[8..];
     }
 
+    // Encode the remaining bytes.
     switch (source_slice.len) {
+        // Using SIMD is still efficient to encode 4 bytes to 7 bytes at a time.
         4 => {
             const hi_chunk = @shuffle(u8, source_slice[0..4].*, undefined, @Vector(7, i32){ 0, 0, 1, 1, 2, 3, 3 });
             const lo_chunk = @shuffle(u8, source_slice[0..4].*, @Vector(1, u8){0}, @Vector(7, i32){ -1, 1, -1, 2, 3, -1, -1 });
@@ -138,6 +151,8 @@ pub fn encode(self: *const Encoder, dest: []u8, source: []const u8, with_padding
     return dest[0..output_size];
 }
 
+/// Allocates a buffer and encodes the source data into it.
+/// The caller is responsible for freeing the returned buffer.
 pub fn allocEncode(self: *const Encoder, allocator: *Allocator, source: []const u8, with_padding: bool) ![]u8 {
     const output_size = self.calcSize(source.len, with_padding);
     const dest = try allocator.alloc(u8, output_size);
