@@ -1,0 +1,75 @@
+name: Push
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+
+      - name: Format code
+        run: zig fmt --check *.zig
+
+  test:
+    name: Test
+
+    strategy:
+      matrix:
+        target:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-latest
+
+    runs-on: ${{matrix.target}}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+
+      - name: Run tests
+        run: zig build test
+
+  test-wasm:
+    name: Test WASM
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        version:
+          - 0.13.0
+          - 0.14.0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{matrix.version}}
+
+      - name: Set up Wasmtime
+        uses: jcbhmr/setup-wasmtime@v2
+
+      - name: Run tests
+        run: zig test -target wasm32-wasi -mcpu bleeding_edge --test-cmd wasmtime --test-cmd-bin src/root.zig
